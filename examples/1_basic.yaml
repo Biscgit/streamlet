@@ -1,0 +1,39 @@
+# always pass the following header, marking it as a streamlet configuration.
+flow:
+  version: v1
+
+# define inputs
+input:
+  # an input of type PostgreSQL, which here reads from an PostgreSQL database
+  type: PostgreSQL
+  connection:
+    uri: ${SQLALCHEMY_DB_URI}
+  tasks:
+    # define a task running once a day at midnight.
+    - name: invenio_postgre_file_statistics
+      cron:  "0 0 * * *"
+      result:
+        # the sql query returns multiple fields, here "size" and "files" should be metrics.
+        # as "some_field" is not mentioned, it will automatically be set as an attribute.
+        metrics: ["size", "files"]
+      # modules specific parameters. Check the docs for information on these.
+      params:
+        timeout: 120s  # timeout in psycopg for fetching results
+        query: |
+          SELECT SUM(size) AS size, COUNT(*) AS files, some_field
+          FROM files_files
+          GROUP BY some_field;
+
+# define outputs
+output:
+  type: MonitMetric
+  connection:
+    auth:
+      # use environment variables to fill out fields
+      username: ${MONIT_USER}
+      password: ${MONIT_PASSWORD}
+  params:
+    environment: production
+    # set some custom attributes that will be added to all dataframes being passed to this output.
+    static_attributes:
+      some_attribute: 2

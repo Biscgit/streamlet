@@ -1,0 +1,35 @@
+flow:
+  version: v1
+
+input:
+  - type: PostgreSQL
+    connection:
+      uri: ${SQLALCHEMY_DB_URI}
+    tasks:
+      # you can use any var for the name, add something so that it is not the same for all tasks!
+      # `i` is a default parameter, which is just referring to the repeat number, starting from 0.
+      - name: invenio_postgre_file_statistics_$i
+        # run each task with 10 minute differance every hour
+        cron:  "$time_shift * * * *"
+        repeat_for:
+          time_shift: [10, 20, 30]
+          table: ["table_a", "table_b", "table_c"]
+        result:
+          metrics: files
+        params:
+          timeout: 120s
+          # select for each task a different table
+          query: |
+            SELECT COUNT(*) AS files
+            FROM $table
+
+output:
+  - type: MonitMetric
+    connection:
+      auth:
+        username: ${MONIT_USER}
+        password: ${MONIT_PASSWORD}
+    params:
+      environment: production
+      static_attributes:
+        some_attribute: 2

@@ -1,0 +1,16 @@
+flow:
+  version: v1
+  settings:
+    log_level: 10
+input:
+  - type: RandomMetrics
+    tasks:
+      - name: random_values_task
+        cron: "* * * * *"
+        params:
+          count: 3
+          attributes:
+            lucky_number: 79
+            program: streamlet
+output:
+  - type: Console

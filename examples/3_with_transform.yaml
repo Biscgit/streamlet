@@ -1,0 +1,52 @@
+flow:
+  version: v1
+  settings:
+    # allow the usage of by default disabled exec() in python
+    allow_exec: true
+
+# set environment variables
+env:
+  # this does the exact same thing as `allow_exec` in settings.
+  STREAMLET_ALLOW_EXEC: "true"
+
+input:
+  - type: PostgreSQL
+    connection:
+      uri: ${SQLALCHEMY_DB_URI}
+    tasks:
+      - name: invenio_postgre_file_statistics
+        cron:  "0 0 * * *"
+        result:
+          metrics: ["size", "files"]
+        params:
+          timeout: 120s
+          query: |
+            SELECT SUM(size) AS size, COUNT(*) AS files, some_field
+            FROM files_files
+            GROUP BY some_field;
+
+# add optional transforms
+transform:
+  # remove all values where metric is not larger than 0
+  - type: SimpleFilter
+    params:
+      mode: keep
+      cond: gt 0
+  # use python code to transform individual metrics
+  - type: CodeTransform
+    params:
+      mode: metric
+      builtins: str
+      src: |
+        data["range"] = [1, 2, 3, 4, 5]
+
+output:
+  - type: MonitMetric
+    connection:
+      auth:
+        username: ${MONIT_USER}
+        password: ${MONIT_PASSWORD}
+    params:
+      environment: production
+      static_attributes:
+        some_attribute: 2

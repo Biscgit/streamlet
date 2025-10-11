@@ -1,0 +1,36 @@
+flow:
+  version: v1
+
+input:
+  type: PostgreSQL
+  modifiers:
+    # offset the timestamp by 1 hour and 1 minute
+    time_offset: 1h:1m
+  connection:
+    uri: ${SQLALCHEMY_DB_URI}
+  tasks:
+    - name: invenio_postgre_file_statistics
+      cron:  "0 0 * * *"
+      # set the field modifiers
+      result:
+        metrics: ["size", "files"]
+      params:
+        timeout: 120s
+        query: |
+          SELECT SUM(size) AS size, COUNT(*) AS files, some_field
+          FROM files_files
+          GROUP BY some_field;
+
+output:
+  type: MonitMetric
+  connection:
+    auth:
+      username: ${MONIT_USER}
+      password: ${MONIT_PASSWORD}
+  modifiers:
+    # round the timestamp down to midnight (i.e. frame of 1 day)
+    time_modulus: 1d
+  params:
+    environment: production
+    static_attributes:
+      some_attribute: 2

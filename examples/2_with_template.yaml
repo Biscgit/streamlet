@@ -1,0 +1,35 @@
+---
+flow:
+  version: v1
+  # keyword extends merges files ontop of the main config
+  extends:
+    - "${PWD}/filename.yaml"  # define multiple file names
+
+input:
+  - type: PostgreSQL
+    connection:
+      uri: ${SQLALCHEMY_DB_URI}
+    tasks:
+      - name: invenio_postgre_file_statistics
+        cron:  "0 0 * * *"
+        result:
+          metrics: ["size", "files"]
+        params:
+          query: |
+            SELECT SUM(size) AS size, COUNT(*) AS files, some_field
+            FROM files_files
+            GROUP BY some_field;
+
+---
+# imagine this part is in a separate file called `filename.yaml`
+output:
+  - type: MonitMetric
+    connection:
+      producer: ${MONIT_USER}
+      auth:
+        username: ${MONIT_USER}
+        password: ${MONIT_PASSWORD}
+    params:
+      environment: production
+      static_attributes:
+        some_attribute: 2

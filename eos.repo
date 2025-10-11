@@ -1,0 +1,11 @@
+[eos-depend-repo]
+name=CERN EOS Depend Repository
+baseurl=https://storage-ci.web.cern.ch/storage-ci/eos/diopside-depend/el-9/x86_64/
+enabled=1
+gpgcheck=0
+
+[eos-test-repo]
+name=CERN EOS Test Repository
+baseurl=https://storage-ci.web.cern.ch/storage-ci/eos/diopside/tag/testing/el-9/x86_64/
+enabled=1
+gpgcheck=0

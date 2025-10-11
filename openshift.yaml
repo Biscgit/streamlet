@@ -1,0 +1,81 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlet
+  labels:
+    app: streamlet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: streamlet
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: streamlet
+    spec:
+      containers:
+        - name: streamlet
+          image: registry.cern.ch/streamlet/streamlet:2
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: streamlet-env-secret
+          volumeMounts:
+            - name: streamlet-config
+              mountPath: /etc/streamlet
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 5012
+            initialDelaySeconds: 1
+            periodSeconds: 3
+            failureThreshold: 5
+        - name: broker
+          image: registry.cern.ch/docker.io/library/redis:8-alpine
+          command: ["redis-server"]
+          args: ["--save", "", "--appendonly", "no", "--dir", "/tmp", "--bind", "0.0.0.0", "--protected-mode", "yes"]
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "echo 'Delaying shutdown for Streamlet cleanup...' && sleep 5"]
+          ports:
+            - containerPort: 6379
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 8Mi
+          imagePullPolicy: Always
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 1
+            periodSeconds: 3
+            failureThreshold: 5
+      volumes:
+        - name: streamlet-config
+          configMap:
+            name: streamlet-config
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: streamlet-config
+data:
+  flow.yaml: |
+    ...

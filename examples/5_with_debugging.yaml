@@ -1,0 +1,48 @@
+flow:
+  version: v1
+  # adjust various settings in config. It is also possible to use env vars and cmd args.
+  settings:
+    run_once: true  # run all tasks once and quit after
+    print_traceback: true  # print startup and task error traces to console
+    disable_outputs: true  # run tasks but do not send anything on the outputs
+    disable_tasks: true  # disable tasks by default and manually enable them in the config
+
+    log_level: 10  # print debug logs
+    celery_pool: solo  # run tasks without concurrency
+    celery_log_level: 20 # print common celery logs
+
+    disable_readiness_probe: true  # does not start readiness http endpoint
+
+input:
+  - type: PostgreSQL
+    connection:
+      uri: ${SQLALCHEMY_DB_URI}
+    tasks:
+      - name: unimportant-task
+        enabled: true
+        cron: "0 * * * *"
+        params:
+          query: |
+            SELECT COUNT(*) AS metric
+            FROM some_table
+      - name: invenio_postgre_file_statistics
+        cron:  "0 0 * * *"
+        result:
+          metrics: ["size", "files"]
+        params:
+          timeout: 120s
+          query: |
+            SELECT SUM(size) AS size, COUNT(*) AS files, some_field
+            FROM files_files
+            GROUP BY some_field;
+
+output:
+  - type: MonitMetric
+    connection:
+      auth:
+        username: ${MONIT_USER}
+        password: ${MONIT_PASSWORD}
+    params:
+      environment: production
+      static_attributes:
+        some_attribute: 2

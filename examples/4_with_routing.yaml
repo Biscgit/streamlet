@@ -1,0 +1,74 @@
+# always pass the following header, marking it as a streamlet configuration.
+flow:
+  version: v1
+  settings:
+    # allow the usage of by default disabled exec() in python
+    allow_exec: true
+
+input:
+  # collect metrics of program
+  - type: streamletmetrics
+    tasks:
+      - name: streamlet_metrics
+        cron: "0 * * * *"
+  - type: PostgreSQL
+    # adding a name to the module for identifying it, similarly to tasks
+    name: prod-db
+    connection:
+      uri: ${SQLALCHEMY_DB_URI}
+    tasks:
+      - name: invenio-task
+        cron: "0 * * * *"
+        params:
+          query: |
+            SELECT COUNT(*) AS metric
+            FROM some_table
+      - name: invenio_postgre_file_statistics
+        cron:  "0 0 * * *"
+        result:
+          metrics: ["size", "files"]
+        params:
+          timeout: 120s
+          query: |
+            SELECT SUM(size) AS size, COUNT(*) AS files, some_field
+            FROM files_files
+            GROUP BY some_field;
+
+# add optional transforms
+transform:
+  - type: SimpleFilter
+    # exclude tasks with the following name
+    exclude_tasks: streamlet_metrics
+    params:
+      mode: keep
+      cond: gt 0
+  - type: CodeTransform
+    # include only tasks from a specific input
+    include_inputs: prod-db
+    params:
+      mode: metric
+      builtins: str
+      src: |
+        data["range"] = [1, 2, 3, 4, 5]
+  - type: CodeTransform
+    # you can use unix-like filter patterns
+    include_tasks: invenio*
+    params:
+      mode: metric
+      builtins: str
+      src: |
+        data["range"] = [1, 2, 3, 4, 5]
+
+output:
+  - type: MonitMetric
+    connection:
+      auth:
+        username: ${MONIT_USER}
+        password: ${MONIT_PASSWORD}
+    params:
+      environment: production
+      static_attributes:
+        some_attribute: 2
+  - type: Console
+    # define multiple tasks or inputs by passing a list
+    include_tasks: [invenio_postgre_file_statistics, streamlet_metrics]
