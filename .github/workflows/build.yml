@@ -1,0 +1,182 @@
+name: Build
+on:
+  release:
+    types: [published, edited]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  RAW_TAG: ${{ github.event.release.tag_name || 'latest'}}
+
+jobs:
+  build-eos:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Derive image tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+
+          CLEAN_TAG="${RAW_TAG#v}"
+          echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+
+          echo "image -> $IMAGE"
+          echo "cicd tag -> ${CLEAN_TAG}"
+
+          if [[ -z "$CLEAN_TAG" || "$CLEAN_TAG" == "latest" ]]; then
+            EOS_TAGS="${IMAGE}:latest-eos"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH OTHER <<< "${CLEAN_TAG}.0.0.0"
+            MAJOR=${MAJOR:-0}
+            MINOR=${MINOR:-0}
+            PATCH=${PATCH:-0}
+
+            EOS_TAGS="${IMAGE}:${MAJOR}-eos , ${IMAGE}:${MAJOR}.${MINOR}-eos , ${IMAGE}:${MAJOR}.${MINOR}.${PATCH}-eos"
+          fi
+
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "eos_tags=$EOS_TAGS" >> "$GITHUB_OUTPUT"
+
+          echo "image tags -> $EOS_TAGS"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build eos for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./eos.Dockerfile
+          push: false
+          load: true
+          tags: streamlet:scanning-eos
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+      - name: Run Trivy on eos build
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: streamlet:scanning-eos
+          format: 'template'
+          template: '@/contrib/sarif.tpl'
+          output: 'trivy-results.sarif'
+          exit-code: 1
+          severity: 'HIGH,CRITICAL'
+      - name: Upload Trivy scan from eos build
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      - name: Build & Push eos
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./eos.Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.eos_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+  build-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Derive image tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+
+          CLEAN_TAG="${RAW_TAG#v}"
+          echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+
+          echo "image -> $IMAGE"
+          echo "cicd tag -> ${CLEAN_TAG}"
+
+          if [[ -z "$CLEAN_TAG" || "$CLEAN_TAG" == "latest" ]]; then
+            BASE_TAGS="${IMAGE}:latest"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH OTHER <<< "${CLEAN_TAG}.0.0.0"
+            MAJOR=${MAJOR:-0}
+            MINOR=${MINOR:-0}
+            PATCH=${PATCH:-0}
+
+            BASE_TAGS="${IMAGE}:${MAJOR} , ${IMAGE}:${MAJOR}.${MINOR} , ${IMAGE}:${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "base_tags=$BASE_TAGS" >> "$GITHUB_OUTPUT"
+
+          echo "image tags -> $BASE_TAGS"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build base for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: streamlet:scanning-base
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+      - name: Run Trivy on build
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: streamlet:scanning-base
+          format: 'template'
+          template: '@/contrib/sarif.tpl'
+          output: 'trivy-results.sarif'
+          exit-code: 1
+          severity: 'HIGH,CRITICAL'
+      - name: Upload Trivy scan from build
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      - name: Build & Push base
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.base_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64

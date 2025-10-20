@@ -1,6 +1,6 @@
 [project]
 name = "streamlet"
-version = "2.3.0"
+version = "2.3.1"
 description = "A data pipeline with simple to configure periodic tasks build on celery."
 requires-python = ">=3.12"
 dependencies = [

@@ -1,0 +1,48 @@
+name: Generate Docs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  gendocs:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip uv
+          uv sync --dev
+      - name: Generate documentation
+        run: |
+          git config user.name "streamlet[bot]"
+          git config user.email "streamlet[bot]@noreply.github.com"
+
+          if [ "$(git log -1 --pretty=format:'%an')" = "streamlet[bot]" ]; then
+            echo "Last commit was by the Pipeline. Skipping to avoid loops."
+            exit 0
+          fi
+
+          uv run docs/generators/generate_modules.py
+          uv run docs/generators/generate_settings.py
+          git add docs/MODULES.md docs/SETTINGS.md
+
+          if git diff --exit-code HEAD -- docs/MODULES.md docs/SETTINGS.md; then
+            echo "No changes in MODULES.md. Skipping commit."
+            exit 0
+          fi
+
+          git commit docs/MODULES.md docs/SETTINGS.md -m "Docs: Generated documentation from latest changes"
+          git push origin HEAD:${{ github.head_ref }}
